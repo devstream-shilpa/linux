@@ -1,18 +1,151 @@
-Linux kernel
-============
+# CMPE 283 – Assignment 2: KVM Exit Statistics
 
-There are several guides for kernel developers and users. These guides can
-be rendered in a number of formats, like HTML and PDF. Please read
-Documentation/admin-guide/README.rst first.
+### Student
+**Name:** Shilpa S. Kumar  
+**Submission Type:** Individual  
+**GitHub Repo:** https://github.com/devstream-shilpa/linux  
+**Instructor Access:** Granted to `mlarkin2015` (public fork)  
 
-In order to build the documentation, use ``make htmldocs`` or
-``make pdfdocs``.  The formatted documentation can also be read online at:
+---
 
-    https://www.kernel.org/doc/html/latest/
+## 1. Team Members
+Individual submission (no partner).
 
-There are various text files in the Documentation/ subdirectory,
-several of them using the reStructuredText markup notation.
+---
 
-Please read the Documentation/process/changes.rst file, as it contains the
-requirements for building and running the kernel, and information about
-the problems which may result by upgrading your kernel.
+## 2. Steps to Reproduce (Detailed Setup Guide)
+
+### Environment Setup
+- **Host:** Google Cloud Platform (GCP)
+- **Machine Type:** n2-standard-4 (Intel Cascade Lake, nested virtualization enabled)
+- **OS:** Ubuntu 22.04 LTS
+
+### Outer VM Setup
+1. Created an Ubuntu 22.04 VM with nested virtualization enabled.
+2. Verified virtualization support:
+   ```bash
+   egrep -c '(vmx|svm)' /proc/cpuinfo
+   sudo kvm-ok
+3. Installed build dependencies:
+sudo apt install -y build-essential libncurses-dev bison flex libssl-dev libelf-dev \
+    pahole dwarves bc ccache git vim jq
+Kernel Build and Configuration
+
+4.Forked the Linux repo: https://github.com/torvalds/linux
+
+5.Cloned fork:
+
+git clone https://github.com/devstream-shilpa/linux.git
+cd linux
+git checkout v6.8
+
+6.Configured and built:
+
+make defconfig
+scripts/config --set-str CONFIG_LOCALVERSION "-cmpe283-a2-kvm"
+make -j"$(nproc)"
+sudo make modules_install
+sudo make install
+sudo reboot
+
+
+7.Verified kernel installation:
+
+uname -r
+# → 6.8.0-cmpe283-a2-kvm-dirty
+
+KVM Source Instrumentation
+
+8.Edited arch/x86/kvm/vmx/vmx.c:
+
+* Added at top:
+ #define CMPE283_MAX_EXIT_REASONS 256
+static atomic64_t cmpe283_exit_counts[CMPE283_MAX_EXIT_REASONS];
+static atomic64_t cmpe283_total_exits;
+
+* Added inside __vmx_handle_exit() right after existing local variable declarations:
+
+u32 reason = exit_reason.basic;
+if (reason < CMPE283_MAX_EXIT_REASONS)
+    atomic64_inc(&cmpe283_exit_counts[reason]);
+atomic64_inc(&cmpe283_total_exits);
+
+if (atomic64_read(&cmpe283_total_exits) % 10000ULL == 0) {
+    pr_info("CMPE283: VMX Exit Stats (total=%llu)\n", atomic64_read(&cmpe283_total_exits));
+    for (int i = 0; i < CMPE283_MAX_EXIT_REASONS; i++) {
+        u64 c = atomic64_read(&cmpe283_exit_counts[i]);
+        if (!c) continue;
+        pr_info("CMPE283: exit %d count=%llu\n", i, c);
+    }
+}
+9. Rebuilt, installed, and rebooted:
+ 
+make -j"$(nproc)"
+sudo make modules_install
+sudo make install
+sudo reboot
+
+Inner VM Setup
+
+10. Inside the outer VM:
+
+Created the inner VM with virt-manager or virt-install using an Ubuntu 22.04 cloud image.
+
+Edited its XML to use user-mode networking:
+
+<interface type='user'>
+  <model type='virtio'/>
+</interface>
+
+11. Started the inner VM:
+  sudo virsh --connect qemu:///system start inner-vm
+
+12. Verified instrumentation:
+ sudo dmesg -w | grep -i CMPE283
+
+3. Observations – Exit Frequency
+
+The number of exits increases steadily while the VM runs, with visible spikes during:
+
+Guest boot (init, I/O)
+
+CPU-bound operations (e.g., apt update inside guest)
+
+Total exits exceeded 840,000 during a typical boot session.
+
+The growth rate is roughly linear once the system is idle.
+
+4. Most Frequent vs Least Frequent Exit Types
+
+| Exit Type               | Count    | Notes                                       |
+| ----------------------- | -------- | ------------------------------------------- |
+| 30                      | ~273,000 | EPT Violation (very common, memory mapping) |
+| 48                      | ~238,000 | EPT Misconfiguration / MMIO events          |
+| 10                      | ~202,000 | CPUID (frequent during boot)                |
+| 49                      | ~20,000  | Control Register Access                     |
+| 0, 1, 7, 12, 28, 32     | 1k–30k   | Moderate events                             |
+| 46, 47, 54, 55          | ≤5       | Very rare                                   |
+
+Observation:
+
+Most frequent exits are related to memory virtualization (EPT) and CPUID handling.
+
+Least frequent exits correspond to special interrupts or unimplemented conditions.
+
+5. Deliverables Verified
+
+* Custom kernel built and running (uname -r = 6.8.0-cmpe283-a2-kvm-dirty)
+* KVM active and /dev/kvm present
+* Inner VM booted successfully
+* CMPE283 exit statistics collected periodically
+
+Commit & Build Verification
+
+All changes committed in the public fork (devstream-shilpa/linux).
+Instructor account mlarkin2015 has access.
+Repository builds successfully from a clean clone using:
+
+make defconfig
+make -j"$(nproc)"
+sudo make modules_install
+sudo make install
