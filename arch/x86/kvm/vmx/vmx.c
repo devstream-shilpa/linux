@@ -67,6 +67,12 @@
 #include "x86.h"
 #include "smm.h"
 #include "vmx_onhyperv.h"
+/* CMPE283 A2: VMX exit counters */
+#include <linux/atomic.h>
+
+#define CMPE283_MAX_EXIT_REASONS 256
+static atomic64_t cmpe283_exit_counts[CMPE283_MAX_EXIT_REASONS];
+static atomic64_t cmpe283_total_exits;
 
 MODULE_AUTHOR("Qumranet");
 MODULE_LICENSE("GPL");
@@ -6410,10 +6416,32 @@ void dump_vmcs(struct kvm_vcpu *vcpu)
  */
 static int __vmx_handle_exit(struct kvm_vcpu *vcpu, fastpath_t exit_fastpath)
 {
+
 	struct vcpu_vmx *vmx = to_vmx(vcpu);
 	union vmx_exit_reason exit_reason = vmx->exit_reason;
 	u32 vectoring_info = vmx->idt_vectoring_info;
 	u16 exit_handler_index;
+{
+        u32 reason = exit_reason.basic;
+
+        if (reason < CMPE283_MAX_EXIT_REASONS)
+            atomic64_inc(&cmpe283_exit_counts[reason]);
+        atomic64_inc(&cmpe283_total_exits);
+
+        /* Print stats every 10,000 total exits; omit zeros */
+        {
+            u64 tot = atomic64_read(&cmpe283_total_exits);
+            if (tot % 10000ULL == 0) {
+                int i;
+                pr_info("CMPE283: VMX Exit Stats (total=%llu)\n", tot);
+                for (i = 0; i < CMPE283_MAX_EXIT_REASONS; i++) {
+                    u64 c = atomic64_read(&cmpe283_exit_counts[i]);
+                    if (!c) continue;
+                    pr_info("CMPE283: exit %d count=%llu\n", i, c);
+                }
+            }
+        }
+    }
 
 	/*
 	 * Flush logged GPAs PML buffer, this will make dirty_bitmap more
