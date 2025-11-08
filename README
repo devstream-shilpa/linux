@@ -142,7 +142,6 @@ Least frequent exits correspond to special interrupts or unimplemented condition
 Commit & Build Verification
 
 All changes committed in the public fork (devstream-shilpa/linux).
-Instructor account mlarkin2015 has access.
 Repository builds successfully from a clean clone using:
 
 make defconfig
