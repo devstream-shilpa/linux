@@ -5,6 +5,12 @@
 **Instructor Access:** Public fork  
 
 ---
+### Submission Info
+- ** Submission branch:** `cmpe283-a2-shilpa`
+- Repository: [https://github.com/devstream-shilpa/linux](https://github.com/devstream-shilpa/linux)
+- This branch contains:
+  - Modified `arch/x86/kvm/vmx/vmx.c` with CMPE283 exit-statistics instrumentation  
+  - `README.md` with detailed setup, observations, and results  
 
 ## 1. Team Members
 Individual submission (no partner).
